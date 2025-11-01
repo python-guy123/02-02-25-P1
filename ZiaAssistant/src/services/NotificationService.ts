@@ -1,55 +1,79 @@
-import PushNotification from 'react-native-push-notification';
+import * as Notifications from 'expo-notifications';
 import {Reminder} from '../types';
+import {Platform} from 'react-native';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 export class NotificationService {
-  static configure() {
-    PushNotification.configure({
-      onNotification: function (notification: any) {
-        console.log('NOTIFICATION:', notification);
-      },
-      permissions: {
-        alert: true,
-        badge: true,
-        sound: true,
-      },
-      popInitialNotification: true,
-      requestPermissions: true,
-    });
+  static async configure() {
+    const {status: existingStatus} = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const {status} = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') {
+      console.log('Failed to get push notification permissions');
+      return;
+    }
 
-    PushNotification.createChannel(
-      {
-        channelId: 'zia-reminders',
-        channelName: 'Zia Reminders',
-        channelDescription: 'Reminders from Zia Assistant',
-        playSound: true,
-        soundName: 'default',
-        importance: 4,
-        vibrate: true,
-      },
-      (created: boolean) => console.log(`Channel created: ${created}`),
-    );
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('zia-reminders', {
+        name: 'Zia Reminders',
+        description: 'Reminders from Zia Assistant',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        sound: 'default',
+      });
+    }
   }
 
-  static scheduleReminder(reminder: Reminder) {
-    PushNotification.localNotificationSchedule({
-      channelId: 'zia-reminders',
-      id: reminder.id,
-      title: 'Reminder: ' + reminder.title,
-      message: reminder.description,
-      date: reminder.dueDate,
-      allowWhileIdle: true,
-    });
+  static async scheduleReminder(reminder: Reminder) {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Reminder: ' + reminder.title,
+          body: reminder.description,
+          sound: 'default',
+        },
+        trigger: {
+          date: reminder.dueDate,
+          channelId: 'zia-reminders',
+        },
+      });
+    } catch (error) {
+      console.error('Error scheduling reminder:', error);
+    }
   }
 
-  static cancelReminder(reminderId: string) {
-    PushNotification.cancelLocalNotification(reminderId);
+  static async cancelReminder(reminderId: string) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(reminderId);
+    } catch (error) {
+      console.error('Error canceling reminder:', error);
+    }
   }
 
-  static sendImmediateNotification(title: string, message: string) {
-    PushNotification.localNotification({
-      channelId: 'zia-reminders',
-      title: title,
-      message: message,
-    });
+  static async sendImmediateNotification(title: string, message: string) {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: title,
+          body: message,
+          sound: 'default',
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error('Error sending notification:', error);
+    }
   }
 }
